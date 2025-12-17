@@ -71,6 +71,10 @@ VALID_CLARITIES = ['I1', 'SI2', 'SI1', 'VS2', 'VS1', 'VVS2', 'VVS1', 'IF']
 # Exchange rate
 USD_TO_IDR = 15500
 
+# Load model at module level (for gunicorn)
+print("🔄 Loading model at startup...")
+load_model()
+
 
 @app.route('/')
 def home():
