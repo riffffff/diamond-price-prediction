@@ -1,238 +1,217 @@
-# Dokumentasi Deployment - Diamond Price Prediction API
+# Dokumentasi Deployment Model Machine Learning
 
 ## 📋 Daftar Isi
 1. [Overview](#overview)
-2. [Arsitektur Sistem](#arsitektur-sistem)
-3. [File Struktur](#file-struktur)
-4. [Deployment Flask API ke Hugging Face Spaces](#deployment-flask-api-ke-hugging-face-spaces)
-5. [Deployment Streamlit UI](#deployment-streamlit-ui)
-6. [API Endpoints](#api-endpoints)
-7. [Integrasi Frontend & Backend](#integrasi-frontend--backend)
+2. [Arsitektur Deployment Model](#arsitektur-deployment-model)
+3. [Model Files](#model-files)
+4. [Deployment Model ke Flask API](#deployment-model-ke-flask-api)
+5. [Deployment Model ke Streamlit UI](#deployment-model-ke-streamlit-ui)
+6. [Proses Prediksi](#proses-prediksi)
+7. [API Request & Response](#api-request--response)
 
 ---
 
 ## Overview
 
-Proyek ini mengimplementasikan **Machine Learning Deployment** untuk prediksi harga diamond dengan arsitektur:
-- **Frontend**: Streamlit UI (hosted di Streamlit Cloud)
-- **Backend**: Flask REST API (hosted di Hugging Face Spaces)
-- **Model**: Random Forest Regressor
+Dokumentasi ini menjelaskan bagaimana **ML Model (Random Forest Regressor)** di-deploy ke:
+1. **Flask REST API** - sebagai backend service
+2. **Streamlit UI** - sebagai frontend dengan fallback local prediction
+
+Model yang digunakan:
+- **Algorithm**: Random Forest Regressor
+- **Target**: Log-transformed price (untuk menangani skewness)
+- **Features**: carat, cut, color, clarity, table
 
 ---
 
-## Arsitektur Sistem
+## Arsitektur Deployment Model
 
 ```
-┌─────────────────────────┐     HTTPS Request     ┌─────────────────────────┐
-│      STREAMLIT UI       │ ───────────────────▶  │      FLASK API          │
-│   (Streamlit Cloud)     │                       │   (HF Spaces)           │
-│                         │ ◀───────────────────  │                         │
-│   - Form Input Diamond  │     JSON Response     │   - /predict endpoint   │
-│   - Display Hasil       │                       │   - /health endpoint    │
-└─────────────────────────┘                       └───────────┬─────────────┘
-                                                              │
-                                                              ▼
-                                                  ┌─────────────────────────┐
-                                                  │      ML MODEL           │
-                                                  │   (Random Forest)       │
-                                                  │   - model.pkl (64MB)    │
-                                                  │   - encoder.pkl         │
-                                                  │   - features.pkl        │
-                                                  └─────────────────────────┘
-```
-
----
-
-## File Struktur
-
-```
-diamond-price-prediction/
-├── api.py              # Flask REST API backend
-├── app.py              # Streamlit UI frontend
-├── Dockerfile          # Docker config untuk HF Spaces
-├── Procfile            # Process config untuk deployment
-├── requirements.txt    # Python dependencies
-├── model.pkl           # Trained ML model (64MB)
-├── encoder.pkl         # Label encoder
-├── features.pkl        # Feature names
-└── API_README.md       # API documentation
+┌─────────────────────────────────────────────────────────────────┐
+│                        ML MODEL FILES                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
+│  │  model.pkl   │  │ encoder.pkl  │  │ features.pkl │          │
+│  │  (64 MB)     │  │ (Label Enc)  │  │ (Col Names)  │          │
+│  └──────────────┘  └──────────────┘  └──────────────┘          │
+└──────────────────────────────────────┬──────────────────────────┘
+                                       │
+                    ┌──────────────────┴──────────────────┐
+                    │                                     │
+                    ▼                                     ▼
+        ┌─────────────────────┐              ┌─────────────────────┐
+        │    FLASK API        │              │    STREAMLIT UI     │
+        │    (api.py)         │              │    (app.py)         │
+        │                     │              │                     │
+        │  - Load model.pkl   │              │  - Call API first   │
+        │  - Load encoder.pkl │              │  - Fallback: load   │
+        │  - Predict via API  │              │    model locally    │
+        └─────────────────────┘              └─────────────────────┘
 ```
 
 ---
 
-## Deployment Flask API ke Hugging Face Spaces
+## Model Files
 
-### Step 1: Buat Space di Hugging Face
-1. Buka https://huggingface.co/spaces
-2. Klik "Create new Space"
-3. Pilih:
-   - **Space name**: `diamond-prediction-api`
-   - **SDK**: Docker
-   - **Visibility**: Public
+### 1. model.pkl (64 MB)
+```python
+# Training code (simplified)
+from sklearn.ensemble import RandomForestRegressor
+import joblib
 
-### Step 2: Siapkan Dockerfile
-```dockerfile
-FROM python:3.10-slim
+model = RandomForestRegressor(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)  # y = log(price)
 
-WORKDIR /app
-
-# Install git-lfs for large model files
-RUN apt-get update && apt-get install -y git-lfs && rm -rf /var/lib/apt/lists/*
-
-# Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application files
-COPY api.py .
-COPY model.pkl .
-COPY encoder.pkl .
-COPY features.pkl .
-
-# Expose port 7860 (Hugging Face default)
-EXPOSE 7860
-
-# Run the Flask API
-CMD ["gunicorn", "api:app", "--bind", "0.0.0.0:7860"]
+# Save model
+joblib.dump(model, 'model.pkl')
 ```
 
-### Step 3: Push ke HF Spaces
-```bash
-# Clone HF Space
-git clone https://huggingface.co/spaces/USERNAME/diamond-prediction-api
+### 2. encoder.pkl
+```python
+# Encode categorical features
+from sklearn.preprocessing import OrdinalEncoder
 
-# Copy files
-cp api.py Dockerfile requirements.txt model.pkl encoder.pkl features.pkl ./
+encoder = OrdinalEncoder()
+encoder.fit(df[['cut', 'color', 'clarity']])
 
-# Setup Git LFS untuk file besar (model.pkl > 10MB)
-git lfs install
-git lfs track "*.pkl"
-
-# Push
-git add .
-git commit -m "Deploy Flask API"
-git push origin main
+# Save encoder
+joblib.dump(encoder, 'encoder.pkl')
 ```
 
-### Step 4: Verifikasi Deployment
-Setelah build selesai, API akan live di:
-- **URL**: `https://USERNAME-diamond-prediction-api.hf.space`
-
-Test dengan curl:
-```bash
-# Health check
-curl https://rifaifirdaus-diamond-prediction-api.hf.space/health
-
-# Prediction
-curl -X POST https://rifaifirdaus-diamond-prediction-api.hf.space/predict \
-  -H "Content-Type: application/json" \
-  -d '{"carat": 0.5, "cut": "Ideal", "color": "F", "clarity": "VS1", "table": 57}'
-```
-
-### Screenshot: API Health Check
-![API Health Check](api_health_endpoint_1765940405484.png)
-
----
-
-## Deployment Streamlit UI
-
-### Step 1: Push ke GitHub
-```bash
-git add app.py requirements.txt
-git commit -m "Add Streamlit app"
-git push origin main
-```
-
-### Step 2: Deploy di Streamlit Cloud
-1. Buka https://share.streamlit.io
-2. Klik "New app"
-3. Connect GitHub repo: `riffffff/diamond-price-prediction`
-4. Main file: `app.py`
-5. Deploy!
-
-### Step 3: Set Environment Variable (Opsional)
-Di Streamlit Cloud Settings, tambahkan:
-```
-API_URL=https://rifaifirdaus-diamond-prediction-api.hf.space
+### 3. features.pkl
+```python
+# Save feature column names for consistent ordering
+features = ['carat', 'cut', 'color', 'clarity', 'table']
+joblib.dump(features, 'features.pkl')
 ```
 
 ---
 
-## API Endpoints
+## Deployment Model ke Flask API
 
-### GET /
-Welcome message dan daftar endpoints.
-
-**Response:**
-```json
-{
-    "message": "Diamond Price Prediction API",
-    "version": "1.0.0",
-    "endpoints": {
-        "GET /": "This welcome message",
-        "GET /health": "Health check",
-        "POST /predict": "Predict diamond price"
-    }
-}
-```
-
-### GET /health
-Health check untuk monitoring.
-
-**Response:**
-```json
-{
-    "status": "healthy",
-    "model_loaded": true,
-    "encoder_loaded": true,
-    "features_loaded": true
-}
-```
-
-### POST /predict
-Prediksi harga diamond.
-
-**Request Body:**
-```json
-{
-    "carat": 0.5,
-    "cut": "Ideal",
-    "color": "F",
-    "clarity": "VS1",
-    "table": 57.0
-}
-```
-
-**Response:**
-```json
-{
-    "success": true,
-    "prediction": {
-        "price_usd": 1714.64,
-        "price_idr": 26576908.0
-    },
-    "input": {
-        "carat": 0.5,
-        "cut": "Ideal",
-        "color": "F",
-        "clarity": "VS1",
-        "table": 57.0
-    }
-}
-```
-
----
-
-## Integrasi Frontend & Backend
-
-### Kode Integrasi di Streamlit (app.py)
+### Langkah 1: Load Model saat Startup
 
 ```python
+# api.py
+import joblib
+import numpy as np
+import pandas as pd
+
+# Global variables untuk model
+model = None
+encoder = None
+features = None
+
+def load_model():
+    """Load ML model, encoder, dan features"""
+    global model, encoder, features
+    try:
+        model = joblib.load('model.pkl')
+        encoder = joblib.load('encoder.pkl')
+        features = joblib.load('features.pkl')
+        print("✅ Model loaded successfully!")
+        return True
+    except Exception as e:
+        print(f"❌ Error loading model: {e}")
+        return False
+
+# Load model at module level (penting untuk gunicorn!)
+print("🔄 Loading model at startup...")
+load_model()
+```
+
+### Langkah 2: Buat Endpoint Prediksi
+
+```python
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS untuk akses dari Streamlit
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    # 1. Ambil data dari request
+    data = request.get_json()
+    
+    carat = float(data['carat'])
+    cut = data['cut']
+    color = data['color']
+    clarity = data['clarity']
+    table = float(data['table'])
+    
+    # 2. Encode fitur kategorikal
+    categorical_data = [[cut, color, clarity]]
+    encoded = encoder.transform(categorical_data)
+    
+    # 3. Buat input DataFrame
+    input_data = pd.DataFrame({
+        'carat': [carat],
+        'cut': [encoded[0][0]],
+        'color': [encoded[0][1]],
+        'clarity': [encoded[0][2]],
+        'table': [table]
+    })
+    
+    # 4. Reorder columns sesuai training
+    input_data = input_data[features]
+    
+    # 5. Prediksi (model memprediksi log price)
+    log_price = model.predict(input_data)[0]
+    
+    # 6. Transform balik ke harga asli
+    price_usd = float(np.exp(log_price))
+    price_idr = price_usd * 15500  # Kurs USD ke IDR
+    
+    # 7. Return response
+    return jsonify({
+        "success": True,
+        "prediction": {
+            "price_usd": round(price_usd, 2),
+            "price_idr": round(price_idr, 0)
+        }
+    })
+```
+
+### Langkah 3: Jalankan API
+
+```bash
+# Development
+python api.py
+
+# Production (dengan gunicorn)
+gunicorn api:app --bind 0.0.0.0:5000
+```
+
+---
+
+## Deployment Model ke Streamlit UI
+
+### Langkah 1: Load Model (Fallback)
+
+```python
+# app.py
+import streamlit as st
+import joblib
 import requests
 
-# API Configuration
-API_URL = 'https://rifaifirdaus-diamond-prediction-api.hf.space'
+# API URL (bisa dari environment variable)
+API_URL = os.environ.get('API_URL', 'https://api.example.com')
 
+# Load model lokal sebagai fallback
+@st.cache_resource
+def load_model():
+    try:
+        model = joblib.load('model.pkl')
+        encoder = joblib.load('encoder.pkl')
+        features = joblib.load('features.pkl')
+        return model, encoder, features
+    except:
+        return None, None, None
+```
+
+### Langkah 2: Buat Fungsi Prediksi via API
+
+```python
 def predict_price_api(carat, cut, color, clarity, table):
     """Prediksi harga via Flask API"""
     try:
@@ -256,22 +235,139 @@ def predict_price_api(carat, cut, color, clarity, table):
         return None, False
 ```
 
-### Flow Integrasi
-1. User input data diamond di Streamlit UI
-2. Streamlit mengirim HTTP POST request ke Flask API
-3. Flask API memproses prediksi dengan ML model
-4. Response JSON dikembalikan ke Streamlit
-5. Streamlit menampilkan hasil ke user
+### Langkah 3: Fallback ke Prediksi Lokal
+
+```python
+def predict_price_local(model, encoder, features, carat, cut, color, clarity, table):
+    """Prediksi harga menggunakan model lokal (fallback)"""
+    categorical_data = [[cut, color, clarity]]
+    encoded = encoder.transform(categorical_data)
+    
+    input_data = pd.DataFrame({
+        'carat': [carat],
+        'cut': [encoded[0][0]],
+        'color': [encoded[0][1]],
+        'clarity': [encoded[0][2]],
+        'table': [table]
+    })
+    
+    input_data = input_data[features]
+    log_price = model.predict(input_data)[0]
+    price = np.exp(log_price)
+    return price
+
+def predict_price(model, encoder, features, carat, cut, color, clarity, table):
+    """Prediksi harga - coba API dulu, fallback ke lokal"""
+    # Coba prediksi via API
+    price, success = predict_price_api(carat, cut, color, clarity, table)
+    if success:
+        return price
+    
+    # Fallback ke prediksi lokal
+    if model is not None:
+        return predict_price_local(model, encoder, features, carat, cut, color, clarity, table)
+    
+    raise Exception("Tidak bisa melakukan prediksi")
+```
+
+### Langkah 4: Jalankan Streamlit
+
+```bash
+streamlit run app.py
+```
 
 ---
 
-## 🔗 Live URLs
+## Proses Prediksi
 
-| Service | URL |
-|---------|-----|
-| **Flask API** | https://rifaifirdaus-diamond-prediction-api.hf.space |
-| **GitHub Repo** | https://github.com/riffffff/diamond-price-prediction |
+### Flow Prediksi (Step by Step)
+
+```
+INPUT USER                 PREPROCESSING              MODEL PREDICTION
+┌──────────────┐          ┌──────────────┐           ┌──────────────┐
+│ carat: 0.5   │          │ Encode cut   │           │ Random Forest│
+│ cut: Ideal   │  ──────▶ │ Encode color │  ──────▶  │ Predict      │
+│ color: F     │          │ Encode clrty │           │ log(price)   │
+│ clarity: VS1 │          │ Create DF    │           │              │
+│ table: 57    │          └──────────────┘           └──────────────┘
+└──────────────┘                                            │
+                                                            ▼
+                                                   ┌──────────────┐
+OUTPUT                     POSTPROCESSING          │ log_price    │
+┌──────────────┐          ┌──────────────┐         │ = 7.44       │
+│ $1,714.64    │  ◀────── │ exp(log_p)   │ ◀────── └──────────────┘
+│ Rp 26.5 juta │          │ * kurs IDR   │
+└──────────────┘          └──────────────┘
+```
+
+### Encoding Categorical Features
+
+| Feature | Values | Encoded |
+|---------|--------|---------|
+| cut | Fair, Good, Very Good, Premium, Ideal | 0, 1, 2, 3, 4 |
+| color | J, I, H, G, F, E, D | 0, 1, 2, 3, 4, 5, 6 |
+| clarity | I1, SI2, SI1, VS2, VS1, VVS2, VVS1, IF | 0, 1, 2, 3, 4, 5, 6, 7 |
 
 ---
 
-*Dokumentasi ini dibuat untuk keperluan UAS Deployment Model Machine Learning*
+## API Request & Response
+
+### Request
+
+```http
+POST /predict HTTP/1.1
+Host: localhost:5000
+Content-Type: application/json
+
+{
+    "carat": 0.5,
+    "cut": "Ideal",
+    "color": "F",
+    "clarity": "VS1",
+    "table": 57.0
+}
+```
+
+### Response (Success)
+
+```json
+{
+    "success": true,
+    "prediction": {
+        "price_usd": 1714.64,
+        "price_idr": 26576908.0
+    },
+    "input": {
+        "carat": 0.5,
+        "cut": "Ideal",
+        "color": "F",
+        "clarity": "VS1",
+        "table": 57.0
+    }
+}
+```
+
+### Response (Error)
+
+```json
+{
+    "success": false,
+    "error": "Missing required fields: carat, cut"
+}
+```
+
+---
+
+## Summary
+
+| Komponen | Teknologi | Fungsi |
+|----------|-----------|--------|
+| **Model** | Random Forest Regressor | Prediksi harga diamond |
+| **Encoder** | OrdinalEncoder | Encode fitur kategorikal |
+| **API** | Flask + gunicorn | Serve model sebagai REST API |
+| **UI** | Streamlit | Frontend interaktif |
+| **Serialization** | joblib | Save/load model |
+
+---
+
+*Dokumentasi Model Deployment untuk UAS Machine Learning*
