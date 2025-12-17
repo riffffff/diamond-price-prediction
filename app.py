@@ -10,6 +10,7 @@ import numpy as np
 import joblib
 import os
 import time
+import requests
 
 # Konfigurasi halaman
 st.set_page_config(
@@ -368,21 +369,50 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Load model dan encoder
+# API Configuration
+# Set API_URL via environment variable atau gunakan default localhost
+API_URL = os.environ.get('API_URL', 'http://localhost:5000')
+
+# Load model dan encoder (fallback jika API tidak tersedia)
 @st.cache_resource
 def load_model():
-    model = joblib.load('model.pkl')
-    encoder = joblib.load('encoder.pkl')
-    features = joblib.load('features.pkl')
-    return model, encoder, features
+    try:
+        model = joblib.load('model.pkl')
+        encoder = joblib.load('encoder.pkl')
+        features = joblib.load('features.pkl')
+        return model, encoder, features
+    except:
+        return None, None, None
 
 # Opsi untuk fitur kategorikal
 CUT_OPTIONS = ['Fair', 'Good', 'Very Good', 'Premium', 'Ideal']
 COLOR_OPTIONS = ['J', 'I', 'H', 'G', 'F', 'E', 'D']
 CLARITY_OPTIONS = ['I1', 'SI2', 'SI1', 'VS2', 'VS1', 'VVS2', 'VVS1', 'IF']
 
-def predict_price(model, encoder, features, carat, cut, color, clarity, table):
-    """Fungsi untuk memprediksi harga diamond"""
+def predict_price_api(carat, cut, color, clarity, table):
+    """Prediksi harga via Flask API"""
+    try:
+        response = requests.post(
+            f"{API_URL}/predict",
+            json={
+                "carat": carat,
+                "cut": cut,
+                "color": color,
+                "clarity": clarity,
+                "table": table
+            },
+            timeout=10
+        )
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                return data['prediction']['price_usd'], True
+        return None, False
+    except:
+        return None, False
+
+def predict_price_local(model, encoder, features, carat, cut, color, clarity, table):
+    """Prediksi harga menggunakan model lokal (fallback)"""
     categorical_data = [[cut, color, clarity]]
     encoded = encoder.transform(categorical_data)
     
@@ -398,6 +428,20 @@ def predict_price(model, encoder, features, carat, cut, color, clarity, table):
     log_price = model.predict(input_data)[0]
     price = np.exp(log_price)
     return price
+
+def predict_price(model, encoder, features, carat, cut, color, clarity, table):
+    """Prediksi harga - coba API dulu, fallback ke lokal"""
+    # Coba prediksi via API
+    price, success = predict_price_api(carat, cut, color, clarity, table)
+    if success:
+        return price
+    
+    # Fallback ke prediksi lokal
+    if model is not None:
+        return predict_price_local(model, encoder, features, carat, cut, color, clarity, table)
+    
+    # Jika keduanya gagal
+    raise Exception("Tidak bisa melakukan prediksi. API tidak tersedia dan model lokal tidak ditemukan.")
 
 def render_compact_form(prefix=""):
     """Form input untuk karakteristik diamond"""
