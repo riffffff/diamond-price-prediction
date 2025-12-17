@@ -370,8 +370,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # API Configuration
-# Set API_URL via environment variable atau gunakan default localhost
-API_URL = os.environ.get('API_URL', 'http://localhost:5000')
+# Set API_URL via environment variable atau gunakan default HF Spaces
+API_URL = os.environ.get('API_URL', 'https://rifaifirdaus-diamond-prediction-api.hf.space')
 
 # Load model dan encoder (fallback jika API tidak tersedia)
 @st.cache_resource
