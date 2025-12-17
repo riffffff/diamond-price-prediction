@@ -22,13 +22,45 @@ def load_model():
     """Load ML model, encoder, dan features"""
     global model, encoder, features
     try:
-        model = joblib.load('model.pkl')
-        encoder = joblib.load('encoder.pkl')
-        features = joblib.load('features.pkl')
+        # Try loading from current directory first
+        model_path = 'model.pkl'
+        encoder_path = 'encoder.pkl'
+        features_path = 'features.pkl'
+        
+        # Check if files exist and are not LFS pointers
+        if os.path.exists(model_path):
+            with open(model_path, 'rb') as f:
+                first_bytes = f.read(20)
+                # LFS pointer files start with "version https://git-lfs"
+                if first_bytes.startswith(b'version https://git'):
+                    print("⚠️ Model file is an LFS pointer, need to fetch actual file...")
+                    # Download from HF hub
+                    from huggingface_hub import hf_hub_download
+                    model_path = hf_hub_download(
+                        repo_id="rifaifirdaus/diamond-prediction-api",
+                        filename="model.pkl",
+                        repo_type="space"
+                    )
+                    encoder_path = hf_hub_download(
+                        repo_id="rifaifirdaus/diamond-prediction-api",
+                        filename="encoder.pkl",
+                        repo_type="space"
+                    )
+                    features_path = hf_hub_download(
+                        repo_id="rifaifirdaus/diamond-prediction-api",
+                        filename="features.pkl",
+                        repo_type="space"
+                    )
+        
+        model = joblib.load(model_path)
+        encoder = joblib.load(encoder_path)
+        features = joblib.load(features_path)
         print("✅ Model loaded successfully!")
         return True
     except Exception as e:
         print(f"❌ Error loading model: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 # Opsi valid untuk fitur kategorikal
