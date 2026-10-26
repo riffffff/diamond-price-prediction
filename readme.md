@@ -4,17 +4,16 @@ Diamond Price Prediction adalah aplikasi prediksi harga berlian berbasis web dan
 
 ## Informasi Akademik / Tugas Kuliah
 
-* **Mata Kuliah**: [Nama Mata Kuliah, contoh: Machine Learning / Pemrograman Web Terintegrasi]
-* **Dosen Pengampu**: [Nama Dosen Pengampu]
-* **Program Studi / Jurusan**: [Nama Program Studi]
-* **Instansi / Universitas**: [Nama Perguruan Tinggi]
-
+* **Mata Kuliah**: Machine Learning
+* **Program Studi / Jurusan**: Teknologi Rekayasa Perangkat Lunak
+\
 ### Anggota Kelompok / Pengembang
 
 | Nama Mahasiswa | NIM | Peran |
 | --- | --- | --- |
-| [Nama Anda / Anggota 1] | [NIM 1] | Lead Developer / ML Engineer |
-| [Nama Anggota 2] | [NIM 2] | Frontend / Backend Developer |
+| Muhammad Rifai Firdaus | 23/522149/SV/23614 | Developer / ML Engineer |
+| Amelia Ayuni Tri Cahyanti | 23/512507/SV/22146 | Developer / ML Engineer |
+| Syafira Naila Affani | 23/522372/SV/23675 | UI UX | 
 
 ---
 
